@@ -1,5 +1,5 @@
 describe('Credential Validator', () => {
-  const URL = 'https://usaflex.gpway.com.br/'
+  const URL = ''
   const excelPath = 'C:\\Temp\\teste_credenciais_cypress.xlsx'
 
   const MAX_TENTATIVAS = 1000
