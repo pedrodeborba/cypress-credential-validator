@@ -1,6 +1,7 @@
 {
   "devDependencies": {
     "cypress": "^15.14.1",
+    "cypress-mochawesome-reporter": "^3.8.4",
     "xlsx": "^0.18.5"
   }
 }

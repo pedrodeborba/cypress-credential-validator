@@ -1,6 +1,9 @@
-describe('Teste Login', () => {
+describe('Credential Validator', () => {
   const URL = ''
   const excelPath = 'C:\\Temp\\teste_credenciais_cypress.xlsx'
+
+  const MAX_TENTATIVAS = 1000
+  const WAIT_AFTER_SUCCESS_MS = 2000
 
   const selectors = {
     username: 'input[name="usr"], input[name="login"]',
@@ -8,13 +11,8 @@ describe('Teste Login', () => {
     submit: '[name="btn_login"], input[type="submit"], button[type="submit"]'
   }
 
-  // ======= CONFIGURAÇÕES IMPORTANTES =======
-  const stopOnFirstSuccess = true      // true = para quando achar 1 que funciona | false = testa todos e registra todos os sucessos
-  const failIfNone = false             // true = falha o teste se ninguém logar | false = apenas informa no log e não cria relatório
-  // =========================================
-
-  function safeName(s) {
-    return String(s ?? '')
+  function safeName(value) {
+    return String(value ?? '')
       .trim()
       .replace(/[^\w\-]+/g, '_')
       .slice(0, 80)
@@ -28,30 +26,67 @@ describe('Teste Login', () => {
   }
 
   function doLogin(username, password) {
-    cy.visit(URL)
-
     cy.get(selectors.username).first().should('be.visible').clear().type(String(username).trim())
     cy.get(selectors.password).first().should('be.visible').clear().type(String(password).trim(), { log: false })
     cy.get(selectors.submit).first().should('be.visible').click()
   }
 
   function checkSuccess() {
-    // Se a sua aplicação redireciona ao logar, isso resolve.
-    // Se não redirecionar, me diga um elemento que só aparece após login e eu adapto.
-    return cy.location('href', { timeout: 8000 }).then((href) => {
-      return href.includes('HomeForm')
+    return cy.location('href', { timeout: 10000 }).then((href) => {
+      if (href.includes('HomeForm')) return true
+
+      return cy.get('body').then(($body) => {
+        const text = $body.text()
+        return text.includes('Início') || text.includes('Meus Dados') || text.includes('Recibos')
+      })
     })
   }
 
-  it('testa credenciais e registra SOMENTE as que funcionaram', () => {
+  function waitUntilHomeLoaded() {
+    cy.contains('Início', { timeout: 15000 }).should('be.visible')
+    cy.contains('Meus Dados', { timeout: 15000 }).should('be.visible')
+    cy.wait(WAIT_AFTER_SUCCESS_MS)
+  }
+
+  function openUserMenu() {
+    cy.get('body').then(($body) => {
+      const text = $body.text()
+
+      if (text.includes('Perfil') && text.includes('Sair')) {
+        return
+      }
+
+      cy.get('body').click('topRight', { force: true })
+      cy.contains('Perfil', { timeout: 5000 }).should('be.visible')
+      cy.contains('Sair', { timeout: 5000 }).should('be.visible')
+    })
+  }
+
+  function logoutToLogin() {
+    cy.get('body').then(($body) => {
+      const text = $body.text()
+
+      if (text.includes('Sair')) {
+        cy.contains('Sair').click({ force: true })
+      } else {
+        cy.get('body').click('topRight', { force: true })
+        cy.contains('Sair', { timeout: 5000 }).click({ force: true })
+      }
+    })
+
+    cy.visit(URL)
+    cy.get(selectors.username, { timeout: 10000 }).should('be.visible')
+    cy.get(selectors.password, { timeout: 10000 }).should('be.visible')
+  }
+
+  it('Credenciais Comprometidas', () => {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-')
     const reportDir = 'cypress/artifacts/relatorios'
-    const reportJsonPath = `${reportDir}/sucessos-credenciais-${stamp}.json`
-    const reportCsvPath = `${reportDir}/sucessos-credenciais-${stamp}.csv`
+    const jsonPath = `${reportDir}/sucessos-${stamp}.json`
+    const csvPath = `${reportDir}/sucessos-${stamp}.csv`
 
     const successes = []
 
-    // garante pasta de relatório
     cy.task('ensureDir', reportDir)
 
     cy.task('readXlsx', { filePath: excelPath, sheetIndex: 0 }).then((rows) => {
@@ -61,70 +96,67 @@ describe('Teste Login', () => {
           password: r.password ?? r.Password ?? r.PASSWORD ?? ''
         }))
         .filter((c) => String(c.username).trim() && String(c.password).trim())
+        .slice(0, MAX_TENTATIVAS)
 
       expect(creds.length, 'linhas válidas (username/password)').to.be.greaterThan(0)
 
-      const tryAt = (i) => {
+      const runAt = (i) => {
         if (i >= creds.length) return
 
-        const { username, password } = creds[i]
-        const startedAt = new Date().toISOString()
+        const username = String(creds[i].username).trim()
+        const password = String(creds[i].password).trim()
 
-        // Se quiser reduzir log em massa, comente o cy.log abaixo:
+        cy.clearCookies({ log: false })
+        cy.clearLocalStorage({ log: false })
+        cy.visit(URL)
+
         cy.log(`Tentando (${i + 1}/${creds.length}): ${username}`)
-
         doLogin(username, password)
 
-        cy.wait(900)
+        cy.wait(1200)
 
         return cy.then(() => checkSuccess()).then((ok) => {
           if (ok) {
-            const endedAt = new Date().toISOString()
+            const at = new Date().toISOString()
+            const masked = maskPassword(password)
+            const shotName = `SUCESSO_${safeName(username)}`
 
-            // ✅ Screenshot SOMENTE quando deu sucesso
-            cy.screenshot(`SUCESSO_${safeName(username)}`, { capture: 'fullPage' })
+            waitUntilHomeLoaded()
+            openUserMenu()
+
+            // screenshot único
+            cy.screenshot(shotName, { capture: 'fullPage' })
 
             successes.push({
-              username: String(username).trim(),
-              password_masked: maskPassword(password),
-              startedAt,
-              endedAt
+              username,
+              password_masked: masked,
+              at
             })
+
+            // contexto textual no mochawesome
+            cy.addTestContext(`Usuário válido: ${username}`)
+            cy.addTestContext(`Senha mascarada: ${masked}`)
+            cy.addTestContext(`Data/Hora: ${at}`)
 
             cy.log(`✅ SUCESSO: ${username}`)
 
-            if (stopOnFirstSuccess) return
+            logoutToLogin()
           }
 
-          return tryAt(i + 1)
+          return runAt(i + 1)
         })
       }
 
-      return tryAt(0)
-    })
-    .then(() => {
-      if (successes.length === 0) {
-        cy.log('⚠️ Nenhuma credencial funcionou.')
+      return runAt(0)
+    }).then(() => {
+      cy.writeFile(jsonPath, successes, { log: true })
 
-        if (failIfNone) {
-          throw new Error('Nenhuma credencial funcionou.')
-        }
+      const header = 'username;password_masked;at\n'
+      const lines = successes.map((r) => `${r.username};${r.password_masked};${r.at}`)
+      cy.writeFile(csvPath, header + lines.join('\n'), { log: true })
 
-        return
-      }
-
-      // ✅ gera relatório SOMENTE com sucessos
-      cy.writeFile(reportJsonPath, successes, { log: true })
-
-      const header = 'username,password_masked,startedAt,endedAt\n'
-      const lines = successes.map((r) =>
-        `${r.username},${r.password_masked},${r.startedAt},${r.endedAt}`
-      )
-      cy.writeFile(reportCsvPath, header + lines.join('\n'), { log: true })
-
-      cy.log(`📄 Relatórios gerados (somente sucessos):`)
-      cy.log(reportJsonPath)
-      cy.log(reportCsvPath)
+      cy.log(`📄 JSON: ${jsonPath}`)
+      cy.log(`📄 CSV: ${csvPath}`)
       cy.log(`✅ Total de sucessos: ${successes.length}`)
     })
   })
