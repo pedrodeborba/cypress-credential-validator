@@ -1,0 +1,74 @@
+# =========================
+# Dependencies
+# =========================
+node_modules/
+
+# =========================
+# Cypress artifacts (outputs)
+# =========================
+cypress/screenshots/
+cypress/videos/
+cypress/downloads/
+cypress/results/
+cypress/reports/
+cypress/artifacts/
+
+# Mochawesome / other reporters (if you add later)
+mochawesome-report/
+mochawesome-report*/
+reports/
+results/
+
+# =========================
+# Test data / secrets
+# =========================
+# Excel files (credenciais) - NÃO versionar
+*.xlsx
+*.xls
+*.csv
+
+# Se você quiser permitir CSV "exemplo" versionado, use:
+# !cypress/fixtures/exemplo.csv
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# =========================
+# OS / Editor
+# =========================
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# JetBrains
+.idea/
+
+# =========================
+# Logs
+# =========================
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# =========================
+# Build / cache
+# =========================
+dist/
+build/
+out/
+.cache/
+.tmp/
+temp/
+coverage/
+.nyc_output/
+
+# Cypress cache (às vezes aparece no repo por engano)
+.cypress/

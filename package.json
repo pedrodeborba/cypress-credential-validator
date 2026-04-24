@@ -1,0 +1,6 @@
+{
+  "devDependencies": {
+    "cypress": "^15.14.1",
+    "xlsx": "^0.18.5"
+  }
+}
