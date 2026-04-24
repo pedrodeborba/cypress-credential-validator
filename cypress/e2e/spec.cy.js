@@ -1,9 +1,9 @@
 describe('Credential Validator', () => {
-  const URL = ''
+  const URL = 'https://usaflex.gpway.com.br/'
   const excelPath = 'C:\\Temp\\teste_credenciais_cypress.xlsx'
 
   const MAX_TENTATIVAS = 1000
-  const WAIT_AFTER_SUCCESS_MS = 2000
+  const WAIT_AFTER_SUCCESS_MS = 2500
 
   const selectors = {
     username: 'input[name="usr"], input[name="login"]',
@@ -25,9 +25,86 @@ describe('Credential Validator', () => {
     return s[0] + '*'.repeat(Math.max(1, s.length - 2)) + s[s.length - 1]
   }
 
+  function isLoginPage() {
+    return cy.get('body').then(($body) => {
+      const hasUser = $body.find('input[name="usr"], input[name="login"]').length > 0
+      const hasPass = $body.find('input[name="password"]').length > 0
+      return hasUser && hasPass
+    })
+  }
+
+  function isLoggedArea() {
+    return cy.get('body').then(($body) => {
+      const text = $body.text()
+      return (
+        text.includes('Início') ||
+        text.includes('Meus Dados') ||
+        text.includes('Recibos') ||
+        text.includes('Perfil') ||
+        text.includes('Sair')
+      )
+    })
+  }
+
+  function openUserMenuIfNeeded() {
+    cy.get('body').then(($body) => {
+      const text = $body.text()
+
+      if (text.includes('Sair')) {
+        return
+      }
+
+      cy.get('body').click('topRight', { force: true })
+      cy.wait(800)
+    })
+  }
+
+  function clickLogoutIfPossible() {
+    cy.get('body').then(($body) => {
+      const text = $body.text()
+
+      if (text.includes('Sair')) {
+        cy.contains('Sair').click({ force: true })
+      } else {
+        cy.get('body').click('topRight', { force: true })
+        cy.wait(800)
+
+        cy.get('body').then(($body2) => {
+          if ($body2.text().includes('Sair')) {
+            cy.contains('Sair').click({ force: true })
+          }
+        })
+      }
+    })
+  }
+
+  function ensureLoginPage() {
+    cy.visit(URL)
+    cy.wait(1500)
+
+    return isLoginPage().then((loginOk) => {
+      if (loginOk) return
+
+      return isLoggedArea().then((logged) => {
+        if (logged) {
+          clickLogoutIfPossible()
+          cy.wait(1500)
+        }
+
+        cy.clearCookies({ log: false })
+        cy.clearLocalStorage({ log: false })
+        cy.visit(URL)
+        cy.wait(2000)
+
+        cy.get(selectors.username, { timeout: 20000 }).should('be.visible')
+        cy.get(selectors.password, { timeout: 20000 }).should('be.visible')
+      })
+    })
+  }
+
   function doLogin(username, password) {
-    cy.get(selectors.username).first().should('be.visible').clear().type(String(username).trim())
-    cy.get(selectors.password).first().should('be.visible').clear().type(String(password).trim(), { log: false })
+    cy.get(selectors.username, { timeout: 20000 }).first().should('be.visible').clear().type(String(username).trim())
+    cy.get(selectors.password, { timeout: 20000 }).first().should('be.visible').clear().type(String(password).trim(), { log: false })
     cy.get(selectors.submit).first().should('be.visible').click()
   }
 
@@ -48,35 +125,20 @@ describe('Credential Validator', () => {
     cy.wait(WAIT_AFTER_SUCCESS_MS)
   }
 
-  function openUserMenu() {
-    cy.get('body').then(($body) => {
-      const text = $body.text()
-
-      if (text.includes('Perfil') && text.includes('Sair')) {
-        return
-      }
-
-      cy.get('body').click('topRight', { force: true })
-      cy.contains('Perfil', { timeout: 5000 }).should('be.visible')
-      cy.contains('Sair', { timeout: 5000 }).should('be.visible')
-    })
+  function prepareSuccessScreenshot() {
+    waitUntilHomeLoaded()
+    openUserMenuIfNeeded()
+    cy.wait(1000)
   }
 
   function logoutToLogin() {
-    cy.get('body').then(($body) => {
-      const text = $body.text()
+    clickLogoutIfPossible()
+    cy.wait(1500)
 
-      if (text.includes('Sair')) {
-        cy.contains('Sair').click({ force: true })
-      } else {
-        cy.get('body').click('topRight', { force: true })
-        cy.contains('Sair', { timeout: 5000 }).click({ force: true })
-      }
-    })
+    cy.clearCookies({ log: false })
+    cy.clearLocalStorage({ log: false })
 
-    cy.visit(URL)
-    cy.get(selectors.username, { timeout: 10000 }).should('be.visible')
-    cy.get(selectors.password, { timeout: 10000 }).should('be.visible')
+    ensureLoginPage()
   }
 
   it('Credenciais Comprometidas', () => {
@@ -108,12 +170,13 @@ describe('Credential Validator', () => {
 
         cy.clearCookies({ log: false })
         cy.clearLocalStorage({ log: false })
-        cy.visit(URL)
+
+        ensureLoginPage()
 
         cy.log(`Tentando (${i + 1}/${creds.length}): ${username}`)
         doLogin(username, password)
 
-        cy.wait(1200)
+        cy.wait(1500)
 
         return cy.then(() => checkSuccess()).then((ok) => {
           if (ok) {
@@ -121,10 +184,8 @@ describe('Credential Validator', () => {
             const masked = maskPassword(password)
             const shotName = `SUCESSO_${safeName(username)}`
 
-            waitUntilHomeLoaded()
-            openUserMenu()
+            prepareSuccessScreenshot()
 
-            // screenshot único
             cy.screenshot(shotName, { capture: 'fullPage' })
 
             successes.push({
@@ -133,7 +194,6 @@ describe('Credential Validator', () => {
               at
             })
 
-            // contexto textual no mochawesome
             cy.addTestContext(`Usuário válido: ${username}`)
             cy.addTestContext(`Senha mascarada: ${masked}`)
             cy.addTestContext(`Data/Hora: ${at}`)
