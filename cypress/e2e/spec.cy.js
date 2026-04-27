@@ -47,98 +47,128 @@ describe('Credential Validator', () => {
   }
 
   function openUserMenuIfNeeded() {
-    cy.get('body').then(($body) => {
+    return cy.get('body').then(($body) => {
       const text = $body.text()
 
-      if (text.includes('Sair')) {
-        return
-      }
+      if (text.includes('Sair')) return
 
-      cy.get('body').click('topRight', { force: true })
-      cy.wait(800)
+      return cy.get('body').click('topRight', { force: true }).wait(800)
     })
   }
 
   function clickLogoutIfPossible() {
-    cy.get('body').then(($body) => {
+    return cy.get('body').then(($body) => {
       const text = $body.text()
 
       if (text.includes('Sair')) {
-        cy.contains('Sair').click({ force: true })
-      } else {
-        cy.get('body').click('topRight', { force: true })
-        cy.wait(800)
-
-        cy.get('body').then(($body2) => {
-          if ($body2.text().includes('Sair')) {
-            cy.contains('Sair').click({ force: true })
-          }
-        })
+        return cy.contains('Sair').click({ force: true })
       }
+
+      return cy.get('body')
+        .click('topRight', { force: true })
+        .wait(800)
+        .then(() => {
+          return cy.get('body').then(($body2) => {
+            if ($body2.text().includes('Sair')) {
+              return cy.contains('Sair').click({ force: true })
+            }
+          })
+        })
     })
   }
 
   function ensureLoginPage() {
-    cy.visit(URL)
-    cy.wait(1500)
+    return cy.visit(URL).then(() => {
+      return cy.wait(1500).then(() => {
+        return isLoginPage().then((loginOk) => {
+          if (loginOk) return
 
-    return isLoginPage().then((loginOk) => {
-      if (loginOk) return
+          return isLoggedArea()
+            .then((logged) => {
+              if (logged) {
+                return clickLogoutIfPossible().then(() => cy.wait(1500))
+              }
+            })
+            .then(() => {
+              cy.clearCookies({ log: false })
+              cy.clearLocalStorage({ log: false })
 
-      return isLoggedArea().then((logged) => {
-        if (logged) {
-          clickLogoutIfPossible()
-          cy.wait(1500)
-        }
+              return cy.visit(URL).then(() => {
+                cy.wait(2000)
 
-        cy.clearCookies({ log: false })
-        cy.clearLocalStorage({ log: false })
-        cy.visit(URL)
-        cy.wait(2000)
-
-        cy.get(selectors.username, { timeout: 20000 }).should('be.visible')
-        cy.get(selectors.password, { timeout: 20000 }).should('be.visible')
+                cy.get(selectors.username, { timeout: 20000 }).should('be.visible')
+                cy.get(selectors.password, { timeout: 20000 }).should('be.visible')
+              })
+            })
+        })
       })
     })
   }
 
   function doLogin(username, password) {
-    cy.get(selectors.username, { timeout: 20000 }).first().should('be.visible').clear().type(String(username).trim())
-    cy.get(selectors.password, { timeout: 20000 }).first().should('be.visible').clear().type(String(password).trim(), { log: false })
-    cy.get(selectors.submit).first().should('be.visible').click()
+    return cy.get(selectors.username, { timeout: 20000 })
+      .first()
+      .should('be.visible')
+      .clear()
+      .type(String(username).trim())
+      .then(() => {
+        return cy.get(selectors.password)
+          .first()
+          .should('be.visible')
+          .clear()
+          .type(String(password).trim(), { log: false })
+      })
+      .then(() => {
+        return cy.get(selectors.submit).first().should('be.visible').click()
+      })
   }
 
   function checkSuccess() {
     return cy.location('href', { timeout: 10000 }).then((href) => {
-      if (href.includes('HomeForm')) return true
+      if (href.includes('HomeForm') || href.includes('home')) return true
 
       return cy.get('body').then(($body) => {
         const text = $body.text()
-        return text.includes('Início') || text.includes('Meus Dados') || text.includes('Recibos')
+        return (
+          text.includes('Início') ||
+          text.includes('Meus Dados') ||
+          text.includes('Recibos') ||
+          text.includes('Perfil') ||
+          text.includes('Sair')
+        )
       })
     })
   }
 
   function waitUntilHomeLoaded() {
-    cy.contains('Início', { timeout: 15000 }).should('be.visible')
-    cy.contains('Meus Dados', { timeout: 15000 }).should('be.visible')
-    cy.wait(WAIT_AFTER_SUCCESS_MS)
+    return cy.get('body', { timeout: 20000 }).should(($body) => {
+      const text = $body.text()
+
+      const isLogged =
+        text.includes('Início') ||
+        text.includes('Meus Dados') ||
+        text.includes('Recibos') ||
+        text.includes('Perfil') ||
+        text.includes('Sair')
+
+      expect(isLogged).to.be.true
+    }).then(() => cy.wait(WAIT_AFTER_SUCCESS_MS))
   }
 
   function prepareSuccessScreenshot() {
-    waitUntilHomeLoaded()
-    openUserMenuIfNeeded()
-    cy.wait(1000)
+    return waitUntilHomeLoaded()
+      .then(() => openUserMenuIfNeeded())
+      .then(() => cy.wait(1000))
   }
 
   function logoutToLogin() {
-    clickLogoutIfPossible()
-    cy.wait(1500)
-
-    cy.clearCookies({ log: false })
-    cy.clearLocalStorage({ log: false })
-
-    ensureLoginPage()
+    return clickLogoutIfPossible()
+      .then(() => cy.wait(1500))
+      .then(() => {
+        cy.clearCookies({ log: false })
+        cy.clearLocalStorage({ log: false })
+        return ensureLoginPage()
+      })
   }
 
   it('Credenciais Comprometidas', () => {
@@ -148,6 +178,7 @@ describe('Credential Validator', () => {
     const csvPath = `${reportDir}/sucessos-${stamp}.csv`
 
     const successes = []
+    const testContexts = [] // 🔥 novo
 
     cy.task('ensureDir', reportDir)
 
@@ -160,60 +191,65 @@ describe('Credential Validator', () => {
         .filter((c) => String(c.username).trim() && String(c.password).trim())
         .slice(0, MAX_TENTATIVAS)
 
-      expect(creds.length, 'linhas válidas (username/password)').to.be.greaterThan(0)
+      expect(creds.length).to.be.greaterThan(0)
 
       const runAt = (i) => {
-        if (i >= creds.length) return
+        if (i >= creds.length) return cy.wrap(null)
 
         const username = String(creds[i].username).trim()
         const password = String(creds[i].password).trim()
 
-        cy.clearCookies({ log: false })
-        cy.clearLocalStorage({ log: false })
-
-        ensureLoginPage()
-
-        cy.log(`Tentando (${i + 1}/${creds.length}): ${username}`)
-        doLogin(username, password)
-
-        cy.wait(1500)
-
-        return cy.then(() => checkSuccess()).then((ok) => {
+        return cy.then(() => {
+          cy.clearCookies({ log: false })
+          cy.clearLocalStorage({ log: false })
+          return ensureLoginPage()
+        }).then(() => {
+          cy.log(`Tentando (${i + 1}/${creds.length}): ${username}`)
+          return doLogin(username, password)
+        }).then(() => {
+          cy.wait(1500)
+          return checkSuccess()
+        }).then((ok) => {
           if (ok) {
             const at = new Date().toISOString()
             const masked = maskPassword(password)
             const shotName = `SUCESSO_${safeName(username)}`
 
-            prepareSuccessScreenshot()
+            return prepareSuccessScreenshot().then(() => {
+              cy.screenshot(shotName, { capture: 'fullPage' })
 
-            cy.screenshot(shotName, { capture: 'fullPage' })
+              successes.push({
+                username,
+                password_masked: masked,
+                at
+              })
 
-            successes.push({
-              username,
-              password_masked: masked,
-              at
+              testContexts.push(`Usuário válido: ${username}`)
+              testContexts.push(`Senha mascarada: ${masked}`)
+              testContexts.push(`Data/Hora: ${at}`)
+              testContexts.push(`Screenshot: ${shotName}`)
+
+              cy.log(`✅ SUCESSO: ${username}`)
+
+              return logoutToLogin()
             })
-
-            cy.addTestContext(`Usuário válido: ${username}`)
-            cy.addTestContext(`Senha mascarada: ${masked}`)
-            cy.addTestContext(`Data/Hora: ${at}`)
-
-            cy.log(`✅ SUCESSO: ${username}`)
-
-            logoutToLogin()
           }
-
+        }).then(() => {
           return runAt(i + 1)
         })
       }
 
       return runAt(0)
     }).then(() => {
-      cy.writeFile(jsonPath, successes, { log: true })
+      testContexts.forEach(ctx => {
+        cy.addTestContext(ctx)
+      })
+
+      cy.writeFile(jsonPath, successes)
 
       const header = 'username;password_masked;at\n'
       const lines = successes.map((r) => `${r.username};${r.password_masked};${r.at}`)
-      cy.writeFile(csvPath, header + lines.join('\n'), { log: true })
+      cy.writeFile(csvPath, header + lines.join('\n'))
 
       cy.log(`📄 JSON: ${jsonPath}`)
       cy.log(`📄 CSV: ${csvPath}`)
